@@ -23,6 +23,9 @@ class Config:
     apify_token: str
     database_url: str
     search_queries: List[str] = field(default_factory=list)
+    # Company names for the company-employees actor. When set, the pipeline
+    # finds people working at these companies instead of running text searches.
+    companies: List[str] = field(default_factory=list)
     max_leads: int = 100
     max_budget_usd: float = 5.00
     # When False, skip the enrichment actor and build leads directly from the
@@ -40,6 +43,7 @@ class Config:
 
     # Cost model constants (documented assumptions).
     cost_per_search_page: float = 0.10          # $ per search results page
+    cost_per_company_profile: float = 0.008     # $8 per 1000 employees => $0.008 each
     cost_per_enriched_profile: float = 0.01     # $10 per 1000 profiles => $0.01 each
 
     @classmethod
@@ -47,6 +51,7 @@ class Config:
         cls,
         *,
         queries_override: List[str] | None = None,
+        companies_override: List[str] | None = None,
         max_leads_override: int | None = None,
         max_budget_override: float | None = None,
         enrich_override: bool | None = None,
@@ -80,10 +85,18 @@ class Config:
         else:
             raw_queries = os.getenv("SEARCH_QUERIES", "")
             search_queries = [q.strip() for q in raw_queries.split(",") if q.strip()]
-        if not search_queries:
+
+        # Companies (company-employees mode): CLI override wins, else COMPANIES.
+        if companies_override:
+            companies = [c.strip() for c in companies_override if c.strip()]
+        else:
+            raw_companies = os.getenv("COMPANIES", "")
+            companies = [c.strip() for c in raw_companies.split(",") if c.strip()]
+
+        if not search_queries and not companies:
             errors.append(
-                "No search queries provided. Set SEARCH_QUERIES in .env "
-                '(comma-separated) or pass --queries "..." on the command line.'
+                "No search queries or companies provided. Set SEARCH_QUERIES in "
+                ".env, or pass --queries \"...\" / --company \"...\" on the command line."
             )
 
         # Numeric config with validation.
@@ -126,6 +139,7 @@ class Config:
             apify_token=apify_token,
             database_url=database_url,
             search_queries=search_queries,
+            companies=companies,
             max_leads=max_leads,
             max_budget_usd=max_budget_usd,
             enrich_profiles=enrich_profiles,

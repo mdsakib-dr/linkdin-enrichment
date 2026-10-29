@@ -1,10 +1,10 @@
 # LinkedIn Lead Generation CLI
 
-A Python CLI that automates LinkedIn lead generation using two [Apify](https://apify.com) actors and saves enriched leads to PostgreSQL.
+A Python CLI that automates LinkedIn lead generation using [Apify](https://apify.com) actors and saves enriched leads to PostgreSQL.
 
 **Pipeline:** `search` → `enrich` → `save`
 
-1. **Search** — runs [`harvestapi/linkedin-profile-search`](https://apify.com/harvestapi/linkedin-profile-search) for each query and collects profile URLs (deduped) until `MAX_LEADS`.
+1. **Search** — runs [`harvestapi/linkedin-profile-search`](https://apify.com/harvestapi/linkedin-profile-search) for each query, or [`harvestapi/linkedin-company-employees`](https://apify.com/harvestapi/linkedin-company-employees) for each company name, and collects profile URLs (deduped) until `MAX_LEADS`.
 2. **Enrich** — batches URLs (~50/batch) through [`dev_fusion/linkedin-profile-scraper`](https://apify.com/dev_fusion/linkedin-profile-scraper) (`2SyF0bVxmgGr8IVCZ`) with bounded concurrency.
 3. **Save** — upserts each lead into Postgres keyed on `linkedin_url`, so re-runs update rather than duplicate.
 
@@ -65,6 +65,7 @@ cp .env.example .env
 | `APIFY_TOKEN`    | yes      | —       | Apify API token.                                                   |
 | `DATABASE_URL`   | yes      | —       | Postgres URL, e.g. `postgresql+psycopg2://user:pass@localhost:5432/linkedin_leads` |
 | `SEARCH_QUERIES` | yes*     | —       | Comma-separated queries. *Optional if you pass `--queries`.        |
+| `COMPANIES`      | no       | —       | Comma-separated company names. Uses the company-employees actor; when set, it takes precedence over `SEARCH_QUERIES`. |
 | `MAX_LEADS`      | no       | `100`   | Max leads collected across all queries.                           |
 | `MAX_BUDGET_USD` | no       | `5.00`  | Hard cap on estimated spend.                                       |
 
@@ -96,6 +97,16 @@ python -m src.main \
 
 # Use queries from .env, create the table on the fly, verbose logs
 python -m src.main --init-db -v
+
+# Find people by company name (company-employees actor)
+python -m src.main --init-db --company "TallyKhata" --max-leads 50
+
+# Several companies at once (repeat the flag or comma-separate)
+python -m src.main --company "NAVANA GROUP" --company "Dekko ISHO Group"
+
+# Company people filtered to a city / role, no enrichment
+python -m src.main --company "DataSoft Systems Bangladesh Limited" \
+  --city Dhaka --max-leads 20 --no-enrich
 ```
 
 CLI flags override `.env` values. Run `python -m src.main --help` for the full list.
@@ -132,7 +143,8 @@ CLI flags override `.env` values. Run `python -m src.main --help` for the full l
   SQLAlchemy's `postgresql.insert`. `created_at` is preserved; the mutable
   columns and `updated_at` refresh on re-run. Rows are also deduped within a
   batch before insert (Postgres rejects duplicate conflict keys in one statement).
-- **Budget guard:** search charges `$0.10`/page and enrichment `$0.01`/profile
+- **Budget guard:** profile search charges `$0.10`/page, company-employees
+  search `$8`/1000 profiles (`$0.008` each) and enrichment `$0.01`/profile
   (`$10`/1000). Before each search query and each enrich batch the pipeline
   checks whether the next action would exceed `MAX_BUDGET_USD` and stops early
   if so (the summary notes it).

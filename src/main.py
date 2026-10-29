@@ -30,6 +30,14 @@ def _configure_logging(verbose: bool) -> None:
     help="Search query (repeatable). Overrides SEARCH_QUERIES in .env. "
     'You may also pass a single comma-separated string.',
 )
+@click.option(
+    "--company",
+    "companies",
+    multiple=True,
+    help="Find people working at this company (repeatable, or comma-separated). "
+    "Uses the company-employees actor instead of the text search. "
+    "Overrides COMPANIES in .env.",
+)
 @click.option("--max-leads", type=int, default=None, help="Cap on leads to collect.")
 @click.option(
     "--max-budget",
@@ -65,19 +73,27 @@ def _configure_logging(verbose: bool) -> None:
     help="Create tables directly instead of using Alembic (quick local setup).",
 )
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging.")
-def main(queries, max_leads, max_budget, no_enrich, country, city, do_init_db, verbose):
+def main(
+    queries, companies, max_leads, max_budget, no_enrich, country, city,
+    do_init_db, verbose,
+):
     """Automate LinkedIn lead generation: search -> enrich -> save to Postgres."""
     _configure_logging(verbose)
     log = logging.getLogger("main")
 
-    # Allow --queries "a,b" as well as repeated --queries flags.
+    # Allow --queries "a,b" / --company "a,b" as well as repeated flags.
     query_list = []
     for q in queries:
         query_list.extend(part.strip() for part in q.split(",") if part.strip())
 
+    company_list = []
+    for c in companies:
+        company_list.extend(part.strip() for part in c.split(",") if part.strip())
+
     try:
         config = Config.load(
             queries_override=query_list or None,
+            companies_override=company_list or None,
             max_leads_override=max_leads,
             max_budget_override=max_budget,
             enrich_override=False if no_enrich else None,

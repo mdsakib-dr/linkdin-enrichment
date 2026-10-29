@@ -106,6 +106,9 @@ class Pipeline:
         collected: Dict[str, str] = {}
         self._search_items: Dict[str, Dict[str, Any]] = {}
 
+        if self._cfg.companies:
+            return self._search_company_employees(summary)
+
         for query in self._cfg.search_queries:
             if len(collected) >= self._cfg.max_leads:
                 break
@@ -164,6 +167,88 @@ class Pipeline:
             )
         logger.info("Collected %d unique profile URLs from search.", len(collected))
         return collected
+
+    def _search_company_employees(self, summary: RunSummary) -> Dict[str, str]:
+        """Collect employees of the configured companies (company mode).
+
+        Runs the harvestapi company-employees actor once for all companies,
+        then applies the same location filtering/dedup as the text search.
+        """
+        collected: Dict[str, str] = {}
+        self._search_items = {}
+
+        # Pre-flight budget check: assume the full requested batch is returned.
+        projected = self._cfg.max_leads * self._cfg.cost_per_company_profile
+        if self._cost.would_exceed(projected):
+            logger.warning(
+                "Skipping company search — %d profiles (~$%.2f) would exceed "
+                "budget $%.2f.",
+                self._cfg.max_leads, projected, self._cfg.max_budget_usd,
+            )
+            summary.budget_hit = True
+            summary.total_searched = 0
+            return collected
+
+        try:
+            items = self._client.search_company_employees(
+                self._cfg.companies, max_results=self._cfg.max_leads
+            )
+        except Exception as exc:  # noqa: BLE001 - log and continue
+            msg = f"Company employees search failed: {exc}"
+            logger.error(msg)
+            summary.errors.append(msg)
+            items = []
+
+        new_cost = self._cost.add(
+            len(items) * self._cfg.cost_per_company_profile
+        )
+        logger.info(
+            "Company employees (%s): %d items; running cost $%.2f",
+            ", ".join(self._cfg.companies), len(items), new_cost,
+        )
+
+        for item in items:
+            url = extract_profile_url(item)
+            if not url:
+                continue
+            if not self._location_matches(item):
+                summary.filtered_out += 1
+                continue
+            if url not in collected:
+                collected[url] = self._company_label(item) or ", ".join(
+                    self._cfg.companies
+                )
+                self._search_items[url] = item
+            if len(collected) >= self._cfg.max_leads:
+                break
+
+        summary.total_searched = len(collected)
+        if summary.filtered_out:
+            logger.info(
+                "Filtered out %d profile(s) not matching location "
+                "(country=%s, city=%s).",
+                summary.filtered_out,
+                self._cfg.filter_country or "any",
+                self._cfg.filter_city or "any",
+            )
+        logger.info(
+            "Collected %d unique profile URLs from company employees.", len(collected)
+        )
+        return collected
+
+    @staticmethod
+    def _company_label(item: Dict[str, Any]) -> Optional[str]:
+        """Best-effort current company name for a company-employees item."""
+        positions = item.get("currentPosition")
+        if isinstance(positions, list) and positions and isinstance(positions[0], dict):
+            name = positions[0].get("companyName")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+        for key in ("companyName", "company"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
     def _location_matches(self, item: Dict[str, Any]) -> bool:
         """Return True if the profile's current location passes the configured
@@ -484,12 +569,21 @@ class Pipeline:
 
     def run(self) -> RunSummary:
         summary = RunSummary()
-        logger.info(
-            "Starting pipeline: %d queries, max_leads=%d, budget=$%.2f",
-            len(self._cfg.search_queries),
-            self._cfg.max_leads,
-            self._cfg.max_budget_usd,
-        )
+        if self._cfg.companies:
+            logger.info(
+                "Starting pipeline (companies): %d company(ies), max_leads=%d, "
+                "budget=$%.2f",
+                len(self._cfg.companies),
+                self._cfg.max_leads,
+                self._cfg.max_budget_usd,
+            )
+        else:
+            logger.info(
+                "Starting pipeline: %d queries, max_leads=%d, budget=$%.2f",
+                len(self._cfg.search_queries),
+                self._cfg.max_leads,
+                self._cfg.max_budget_usd,
+            )
 
         url_to_query = self._search(summary)
         if not url_to_query:

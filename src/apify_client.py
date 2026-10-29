@@ -2,6 +2,7 @@
 
 Actors:
   - Search:  harvestapi/linkedin-profile-search
+  - Company employees: harvestapi/linkedin-company-employees
   - Enrich:  dev_fusion/linkedin-profile-scraper  (actor id 2SyF0bVxmgGr8IVCZ)
 
 All network calls retry with exponential backoff via tenacity. The search
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 APIFY_BASE = "https://api.apify.com/v2"
 
 SEARCH_ACTOR = "harvestapi~linkedin-profile-search"
+COMPANY_EMPLOYEES_ACTOR = "harvestapi~linkedin-company-employees"
 ENRICH_ACTOR = "2SyF0bVxmgGr8IVCZ"  # dev_fusion/linkedin-profile-scraper
 
 # HTTP status codes worth retrying (transient server / rate-limit errors).
@@ -185,9 +187,38 @@ class ApifyClient:
         logger.info("Search %r returned %d raw items", query, len(items))
         return items
 
-    # ---- public: enrich ----------------------------------------------------
+    # ---- public: company employees -----------------------------------------
 
-    def enrich_profiles(self, profile_urls: List[str]) -> List[Dict[str, Any]]:
+    def search_company_employees(
+        self,
+        companies: List[str],
+        *,
+        max_results: int,
+        job_titles: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run the company-employees actor for one or more company names.
+
+        Returns raw profile items (same shape as the profile search actor), so
+        the pipeline can reuse its mapping/filtering logic.
+        """
+        if not companies:
+            return []
+        run_input: Dict[str, Any] = {
+            "companies": companies,
+            "maxItems": max_results,
+            "companyBatchMode": "all_at_once",
+        }
+        if job_titles:
+            run_input["jobTitles"] = job_titles
+        logger.info(
+            "Searching employees at %d company(ies) (max %d): %s",
+            len(companies), max_results, ", ".join(companies),
+        )
+        items = self._run_sync_or_poll(COMPANY_EMPLOYEES_ACTOR, run_input)
+        logger.info("Company employees search returned %d raw items", len(items))
+        return items
+
+    # ---- public: enrich ----------------------------------------------------    def enrich_profiles(self, profile_urls: List[str]) -> List[Dict[str, Any]]:
         """Run the enrichment actor for a batch of profile URLs.
 
         Returns raw enriched items. Callers should map results back to their
