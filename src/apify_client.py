@@ -218,7 +218,9 @@ class ApifyClient:
         logger.info("Company employees search returned %d raw items", len(items))
         return items
 
-    # ---- public: enrich ----------------------------------------------------    def enrich_profiles(self, profile_urls: List[str]) -> List[Dict[str, Any]]:
+    # ---- public: enrich ----------------------------------------------------
+
+    def enrich_profiles(self, profile_urls: List[str]) -> List[Dict[str, Any]]:
         """Run the enrichment actor for a batch of profile URLs.
 
         Returns raw enriched items. Callers should map results back to their
