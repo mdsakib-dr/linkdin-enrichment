@@ -38,6 +38,13 @@ def _configure_logging(verbose: bool) -> None:
     "Uses the company-employees actor instead of the text search. "
     "Overrides COMPANIES in .env.",
 )
+@click.option(
+    "--profile",
+    "profiles",
+    multiple=True,
+    help="Enrich this LinkedIn profile URL directly (repeatable, or "
+    "comma-separated). Skips search; requires enrichment. Overrides PROFILES.",
+)
 @click.option("--max-leads", type=int, default=None, help="Cap on leads to collect.")
 @click.option(
     "--max-budget",
@@ -74,8 +81,8 @@ def _configure_logging(verbose: bool) -> None:
 )
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging.")
 def main(
-    queries, companies, max_leads, max_budget, no_enrich, country, city,
-    do_init_db, verbose,
+    queries, companies, profiles, max_leads, max_budget, no_enrich, country,
+    city, do_init_db, verbose,
 ):
     """Automate LinkedIn lead generation: search -> enrich -> save to Postgres."""
     _configure_logging(verbose)
@@ -90,10 +97,15 @@ def main(
     for c in companies:
         company_list.extend(part.strip() for part in c.split(",") if part.strip())
 
+    profile_list = []
+    for u in profiles:
+        profile_list.extend(part.strip() for part in u.split(",") if part.strip())
+
     try:
         config = Config.load(
             queries_override=query_list or None,
             companies_override=company_list or None,
+            profiles_override=profile_list or None,
             max_leads_override=max_leads,
             max_budget_override=max_budget,
             enrich_override=False if no_enrich else None,

@@ -26,6 +26,8 @@ class Config:
     # Company names for the company-employees actor. When set, the pipeline
     # finds people working at these companies instead of running text searches.
     companies: List[str] = field(default_factory=list)
+    # Specific LinkedIn profile URLs to enrich directly (no search step).
+    profiles: List[str] = field(default_factory=list)
     max_leads: int = 100
     max_budget_usd: float = 5.00
     # When False, skip the enrichment actor and build leads directly from the
@@ -52,6 +54,7 @@ class Config:
         *,
         queries_override: List[str] | None = None,
         companies_override: List[str] | None = None,
+        profiles_override: List[str] | None = None,
         max_leads_override: int | None = None,
         max_budget_override: float | None = None,
         enrich_override: bool | None = None,
@@ -93,10 +96,17 @@ class Config:
             raw_companies = os.getenv("COMPANIES", "")
             companies = [c.strip() for c in raw_companies.split(",") if c.strip()]
 
-        if not search_queries and not companies:
+        # Direct profile URLs (enrich-only mode): CLI override wins, else PROFILES.
+        if profiles_override:
+            profiles = [p.strip() for p in profiles_override if p.strip()]
+        else:
+            raw_profiles = os.getenv("PROFILES", "")
+            profiles = [p.strip() for p in raw_profiles.split(",") if p.strip()]
+
+        if not search_queries and not companies and not profiles:
             errors.append(
-                "No search queries or companies provided. Set SEARCH_QUERIES in "
-                ".env, or pass --queries \"...\" / --company \"...\" on the command line."
+                "No search queries, companies or profiles provided. Set SEARCH_QUERIES in "
+                ".env, or pass --queries / --company / --profile on the command line."
             )
 
         # Numeric config with validation.
@@ -140,6 +150,7 @@ class Config:
             database_url=database_url,
             search_queries=search_queries,
             companies=companies,
+            profiles=profiles,
             max_leads=max_leads,
             max_budget_usd=max_budget_usd,
             enrich_profiles=enrich_profiles,

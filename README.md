@@ -66,6 +66,7 @@ cp .env.example .env
 | `DATABASE_URL`   | yes      | —       | Postgres URL, e.g. `postgresql+psycopg2://user:pass@localhost:5432/linkedin_leads` |
 | `SEARCH_QUERIES` | yes*     | —       | Comma-separated queries. *Optional if you pass `--queries`.        |
 | `COMPANIES`      | no       | —       | Comma-separated company names. Uses the company-employees actor; when set, it takes precedence over `SEARCH_QUERIES`. |
+| `PROFILES`       | no       | —       | Comma-separated LinkedIn profile URLs to enrich directly (skips search). |
 | `MAX_LEADS`      | no       | `100`   | Max leads collected across all queries.                           |
 | `MAX_BUDGET_USD` | no       | `5.00`  | Hard cap on estimated spend.                                       |
 
@@ -103,6 +104,9 @@ python -m src.main --init-db --company "TallyKhata" --max-leads 50
 
 # Several companies at once (repeat the flag or comma-separate)
 python -m src.main --company "NAVANA GROUP" --company "Dekko ISHO Group"
+
+# Enrich specific profile URLs directly (no search)
+python -m src.main --profile "https://www.linkedin.com/in/example/"
 
 # Company people filtered to a city / role, no enrichment
 python -m src.main --company "DataSoft Systems Bangladesh Limited" \

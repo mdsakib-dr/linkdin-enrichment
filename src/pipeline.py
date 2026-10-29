@@ -106,6 +106,12 @@ class Pipeline:
         collected: Dict[str, str] = {}
         self._search_items: Dict[str, Dict[str, Any]] = {}
 
+        if self._cfg.profiles:
+            return {
+                normalize_linkedin_url(u): "direct"
+                for u in self._cfg.profiles[: self._cfg.max_leads]
+            }
+
         if self._cfg.companies:
             return self._search_company_employees(summary)
 
@@ -569,7 +575,21 @@ class Pipeline:
 
     def run(self) -> RunSummary:
         summary = RunSummary()
-        if self._cfg.companies:
+        if self._cfg.profiles:
+            if not self._cfg.enrich_profiles:
+                msg = (
+                    "Profile mode requires enrichment (ENRICH_PROFILES=true) — "
+                    "there is no search result to build a lead from."
+                )
+                logger.error(msg)
+                summary.errors.append(msg)
+                return summary
+            logger.info(
+                "Starting pipeline (profiles): %d profile URL(s), budget=$%.2f",
+                len(self._cfg.profiles),
+                self._cfg.max_budget_usd,
+            )
+        elif self._cfg.companies:
             logger.info(
                 "Starting pipeline (companies): %d company(ies), max_leads=%d, "
                 "budget=$%.2f",
