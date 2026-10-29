@@ -67,6 +67,7 @@ cp .env.example .env
 | `SEARCH_QUERIES` | yes*     | —       | Comma-separated queries. *Optional if you pass `--queries`.        |
 | `COMPANIES`      | no       | —       | Comma-separated company names. Uses the company-employees actor; when set, it takes precedence over `SEARCH_QUERIES`. |
 | `PROFILES`       | no       | —       | Comma-separated LinkedIn profile URLs to enrich directly (skips search). |
+| `FIND_EMAIL`     | no       | `false` | Look up a verified business email per lead via the atomus search actor (paid Apify plans only). |
 | `MAX_LEADS`      | no       | `100`   | Max leads collected across all queries.                           |
 | `MAX_BUDGET_USD` | no       | `5.00`  | Hard cap on estimated spend.                                       |
 
@@ -104,6 +105,9 @@ python -m src.main --init-db --company "TallyKhata" --max-leads 50
 
 # Several companies at once (repeat the flag or comma-separate)
 python -m src.main --company "NAVANA GROUP" --company "Dekko ISHO Group"
+
+# Enrich a profile and look up its verified business email
+python -m src.main --profile "https://www.linkedin.com/in/example/" --find-email
 
 # Enrich specific profile URLs directly (no search)
 python -m src.main --profile "https://www.linkedin.com/in/example/"

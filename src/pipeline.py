@@ -317,7 +317,8 @@ class Pipeline:
             future_to_idx = {}
             for idx, batch in enumerate(batches, start=1):
                 future = executor.submit(
-                    self._process_batch, idx, total_batches, batch, url_to_query
+                    self._process_batch,
+                    idx, total_batches, batch, url_to_query, summary,
                 )
                 future_to_idx[future] = idx
 
@@ -347,6 +348,7 @@ class Pipeline:
         total: int,
         batch_urls: List[str],
         url_to_query: Dict[str, str],
+        summary: RunSummary,
     ) -> Dict[str, int]:
         """Enrich one batch and upsert results in a single transaction."""
         batch_cost = len(batch_urls) * self._cfg.cost_per_enriched_profile
@@ -362,21 +364,18 @@ class Pipeline:
         self._cost.add(batch_cost)
 
         rows: List[dict] = []
-        enriched = 0
-        with_email = 0
-        with_phone = 0
 
         # Map enriched items back to their input URL where possible.
         for item in items:
             row = self._map_lead(item, url_to_query)
             if row is None:
                 continue
-            enriched += 1
-            if row.get("email"):
-                with_email += 1
-            if row.get("mobile_number"):
-                with_phone += 1
             rows.append(row)
+
+        enriched = len(rows)
+        self._attach_emails(rows, summary)
+        with_email = sum(1 for r in rows if r.get("email"))
+        with_phone = sum(1 for r in rows if r.get("mobile_number"))
 
         failed = len(batch_urls) - enriched
         if failed > 0:
@@ -417,11 +416,10 @@ class Pipeline:
             if row is None:
                 continue
             rows.append(row)
-            if row.get("email"):
-                summary.with_email += 1
-            if row.get("mobile_number"):
-                summary.with_phone += 1
 
+        self._attach_emails(rows, summary)
+        summary.with_email = sum(1 for r in rows if r.get("email"))
+        summary.with_phone = sum(1 for r in rows if r.get("mobile_number"))
         summary.total_enriched = len(rows)
         if rows:
             with session_scope(self._session_factory) as session:
@@ -429,6 +427,73 @@ class Pipeline:
             logger.info("Saved %d lead(s) from search results.", summary.total_saved)
         else:
             logger.warning("No usable leads could be mapped from search results.")
+
+    def _attach_emails(self, rows: List[dict], summary: RunSummary) -> None:
+        """Optionally fill ``email`` on mapped leads via the atomus search actor.
+
+        Matches returned rows back to our leads by normalized LinkedIn URL,
+        falling back to an exact (case-insensitive) full-name match.
+        """
+        if not self._cfg.find_email or not rows:
+            return
+
+        names = sorted({r["full_name"] for r in rows if r.get("full_name")})
+        if not names:
+            logger.warning("Email lookup skipped — no names available for lookup.")
+            return
+
+        max_results = max(5, len(names) * 3)
+        projected = max_results * self._cfg.cost_per_atomus_profile
+        if self._cost.would_exceed(projected):
+            logger.warning(
+                "Email lookup skipped — projected $%.2f would exceed budget "
+                "$%.2f.", projected, self._cfg.max_budget_usd,
+            )
+            summary.budget_hit = True
+            return
+
+        try:
+            items = self._client.find_profiles_by_name(
+                names, max_results=max_results
+            )
+        except Exception as exc:  # noqa: BLE001
+            msg = f"Email lookup failed: {exc}"
+            logger.error(msg)
+            summary.errors.append(msg)
+            return
+
+        self._cost.add(len(items) * self._cfg.cost_per_atomus_profile)
+
+        by_url = {
+            normalize_linkedin_url(r["linkedin_url"]): r
+            for r in rows
+            if r.get("linkedin_url")
+        }
+        by_name = {
+            (r.get("full_name") or "").strip().lower(): r
+            for r in rows
+            if r.get("full_name")
+        }
+
+        found = 0
+        for item in items:
+            email = item.get("email")
+            if not isinstance(email, str) or "@" not in email:
+                continue
+            url = item.get("linkedin_url")
+            target = by_url.get(normalize_linkedin_url(url)) if url else None
+            if target is None:
+                target = by_name.get((item.get("full_name") or "").strip().lower())
+            if target is None or target.get("email"):
+                continue
+            target["email"] = email.strip()
+            found += 1
+            self._cost.add(self._cfg.cost_per_atomus_email)
+
+        logger.info(
+            "Email lookup: %d/%d lead(s) received a verified email.",
+            found, len(rows),
+        )
 
     def _map_search_lead(
         self, url: str, item: Dict[str, Any], url_to_query: Dict[str, str]

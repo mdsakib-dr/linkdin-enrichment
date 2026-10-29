@@ -60,6 +60,14 @@ def _configure_logging(verbose: bool) -> None:
     "(no email/phone). Works on the free Apify plan.",
 )
 @click.option(
+    "--find-email",
+    "find_email",
+    is_flag=True,
+    help="Look up a verified business email per lead via the atomus "
+    "profile-search actor ($0.006/profile + $0.006/email; paid Apify plans "
+    "only).",
+)
+@click.option(
     "--country",
     "country",
     default=None,
@@ -81,8 +89,8 @@ def _configure_logging(verbose: bool) -> None:
 )
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging.")
 def main(
-    queries, companies, profiles, max_leads, max_budget, no_enrich, country,
-    city, do_init_db, verbose,
+    queries, companies, profiles, max_leads, max_budget, no_enrich, find_email,
+    country, city, do_init_db, verbose,
 ):
     """Automate LinkedIn lead generation: search -> enrich -> save to Postgres."""
     _configure_logging(verbose)
@@ -109,6 +117,7 @@ def main(
             max_leads_override=max_leads,
             max_budget_override=max_budget,
             enrich_override=False if no_enrich else None,
+            find_email_override=True if find_email else None,
             filter_country_override=country,
             filter_city_override=city,
         )

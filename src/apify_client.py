@@ -30,6 +30,7 @@ APIFY_BASE = "https://api.apify.com/v2"
 
 SEARCH_ACTOR = "harvestapi~linkedin-profile-search"
 COMPANY_EMPLOYEES_ACTOR = "harvestapi~linkedin-company-employees"
+ATOMUS_SEARCH_ACTOR = "atomus~linkedin-profile-search"
 ENRICH_ACTOR = "2SyF0bVxmgGr8IVCZ"  # dev_fusion/linkedin-profile-scraper
 
 # HTTP status codes worth retrying (transient server / rate-limit errors).
@@ -216,6 +217,33 @@ class ApifyClient:
         )
         items = self._run_sync_or_poll(COMPANY_EMPLOYEES_ACTOR, run_input)
         logger.info("Company employees search returned %d raw items", len(items))
+        return items
+
+    # ---- public: email lookup (atomus) -------------------------------------
+
+    def find_profiles_by_name(
+        self,
+        names: List[str],
+        *,
+        max_results: int,
+        find_email: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Look profiles up by full name with the atomus profile-search actor.
+
+        The actor is a search API (it takes no profile URLs), but accepts the
+        API-only ``fullName`` filter. Rows carry ``linkedin_url`` and — on paid
+        Apify plans — a verified ``email``.
+        """
+        if not names:
+            return []
+        run_input: Dict[str, Any] = {
+            "fullName": list(names),
+            "maxResults": max_results,
+            "findEmail": find_email,
+        }
+        logger.info("Looking up %d name(s) for verified emails", len(names))
+        items = self._run_sync_or_poll(ATOMUS_SEARCH_ACTOR, run_input)
+        logger.info("Email lookup returned %d item(s)", len(items))
         return items
 
     # ---- public: enrich ----------------------------------------------------

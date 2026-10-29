@@ -34,6 +34,9 @@ class Config:
     # search results (name/headline/company/title/location — no email/phone).
     # Useful on the free Apify plan, where the enrich actor blocks API runs.
     enrich_profiles: bool = True
+    # When True, look up a verified business email per lead via the atomus
+    # profile-search actor (name -> LinkedIn URL/email). Paid Apify plans only.
+    find_email: bool = False
 
     # Optional post-search location filters. The search actor treats location
     # words as relevance keywords, not hard filters, so profiles from other
@@ -47,6 +50,8 @@ class Config:
     cost_per_search_page: float = 0.10          # $ per search results page
     cost_per_company_profile: float = 0.008     # $8 per 1000 employees => $0.008 each
     cost_per_enriched_profile: float = 0.01     # $10 per 1000 profiles => $0.01 each
+    cost_per_atomus_profile: float = 0.006      # $6 per 1000 profiles returned
+    cost_per_atomus_email: float = 0.006        # $6 per 1000 emails found
 
     @classmethod
     def load(
@@ -58,6 +63,7 @@ class Config:
         max_leads_override: int | None = None,
         max_budget_override: float | None = None,
         enrich_override: bool | None = None,
+        find_email_override: bool | None = None,
         filter_country_override: str | None = None,
         filter_city_override: str | None = None,
     ) -> "Config":
@@ -125,6 +131,14 @@ class Config:
                 "0", "false", "no", "off",
             )
 
+        # Email lookup toggle: CLI override wins, otherwise FIND_EMAIL (default off).
+        if find_email_override is not None:
+            find_email = find_email_override
+        else:
+            find_email = os.getenv("FIND_EMAIL", "false").strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+
         # Location filters: CLI override wins, else env. Empty string => None.
         raw_country = (
             filter_country_override
@@ -154,6 +168,7 @@ class Config:
             max_leads=max_leads,
             max_budget_usd=max_budget_usd,
             enrich_profiles=enrich_profiles,
+            find_email=find_email,
             filter_country=filter_country,
             filter_city=filter_city,
         )
